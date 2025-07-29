@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Promise Flow Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+
+        .input-panel,
+        .output-panel {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #404040;
+        }
+
+        .input-panel {
+            display: flex;
+            flex-direction: column;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #4a9eff;
+            border-bottom: 2px solid #4a9eff;
+            padding-bottom: 10px;
+        }
+
+        textarea {
+            flex: 1;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: #4a9eff;
+        }
+
+        button {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #357abd;
+        }
+
+        .analysis-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 4px;
+            border: 1px solid #404040;
+        }
+
+        .analysis-section h3 {
+            margin-top: 0;
+            color: #ffa500;
+        }
+
+        .warning {
+            background: #4a2c00;
+            border-left: 4px solid #ffa500;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        .suggestion {
+            background: #003d4a;
+            border-left: 4px solid #00bcd4;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        .mermaid {
+            background: white;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .examples {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .example-btn {
+            background: #404040;
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .example-btn:hover {
+            background: #505050;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="input-panel">
+            <h2>📝 JavaScript/TypeScript Code</h2>
+            <div class="examples">
+                <button class="example-btn" onclick="loadExample(1)">Basic</button>
+                <button class="example-btn" onclick="loadExample(2)">Parallel</button>
+                <button class="example-btn" onclick="loadExample(3)">Complex</button>
+                <button class="example-btn" onclick="loadExample(4)" style="background: #d32f2f;">❌ Bad 1</button>
+                <button class="example-btn" onclick="loadExample(5)" style="background: #d32f2f;">❌ Bad 2</button>
+                <button class="example-btn" onclick="loadExample(6)" style="background: #2e7d32;">✅ Good</button>
+                <button class="example-btn" onclick="loadExample(7)" style="background: #d32f2f;">❌ Hell</button>
+                <button class="example-btn" onclick="loadExample(8)" style="background: #d32f2f;">❌ Mixed</button>
+            </div>
+            <textarea id="codeInput" placeholder="async function example() {
+  const data = await fetch('/api/data');
+  const result = await data.json();
+  return result;
+}">async function fetchUserData(userId) {
+  try {
+    const user = await fetch(`/api/users/${userId}`);
+    const userData = await user.json();
+    
+    const posts = await fetch(`/api/users/${userId}/posts`);
+    const postsData = await posts.json();
+    
+    return { user: userData, posts: postsData };
+  } catch (error) {
+    console.error('Error:', error);
+    throw error;
+  }
+}</textarea>
+            <button onclick="analyzeCode()">🔍 Analyze Promise Flow</button>
+        </div>
+
+        <div class="output-panel">
+            <h2>📊 Promise Flow Analysis</h2>
+
+            <div class="analysis-section" id="issues">
+                <h3>⚠️ Issues & Suggestions</h3>
+                <div id="issuesContent">分析結果がここに表示されます</div>
+            </div>
+
+            <div class="analysis-section" id="metrics">
+                <h3>📈 Code Metrics</h3>
+                <div id="metricsContent"></div>
+            </div>
+
+            <div class="analysis-section">
+                <h3>🗺️ Promise Flow Diagram</h3>
+                <div id="flowDiagram"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#4a9eff',
+                primaryTextColor: '#000',
+                primaryBorderColor: '#357abd',
+                lineColor: '#666',
+                secondaryColor: '#ffa500',
+                tertiaryColor: '#e0e0e0'
+            }
+        });
+
+        const examples = {
+            1: `async function fetchUserData(userId) {
+  try {
+    const user = await fetch(\`/api/users/\${userId}\`);
+    const userData = await user.json();
+    
+    const posts = await fetch(\`/api/users/\${userId}/posts\`);
+    const postsData = await posts.json();
+    
+    return { user: userData, posts: postsData };
+  } catch (error) {
+    console.error('Error:', error);
+    throw error;
+  }
+}`,
+            2: `async function processData() {
+  const data1 = fetch('/api/data1');
+  const data2 = fetch('/api/data2');
+  const data3 = fetch('/api/data3');
+  
+  const result1 = await data1.json();
+  const result2 = await data2.json();
+  const result3 = await data3.json();
+  
+  return [result1, result2, result3];
+}`,
+            3: `async function complexFlow(id) {
+  const config = await getConfig();
+  
+  if (config.useCache) {
+    const cached = await getFromCache(id);
+    if (cached) return cached;
+  }
+  
+  const [userData, preferences] = await Promise.all([
+    fetchUser(id),
+    fetchPreferences(id)
+  ]);
+  
+  const enrichedData = await enrichUserData(userData, preferences);
+  
+  if (config.useCache) {
+    await saveToCache(id, enrichedData);
+  }
+  
+  return enrichedData;
+}`,
+            // テストケース用の追加例
+            4: `// ❌ BAD: 典型的なAI生成コードの問題例
+async function badExample() {
+  const user = await fetch('/api/user');
+  const profile = await fetch('/api/profile');
+  const settings = await fetch('/api/settings');
+  
+  const userData = user.json();
+  const profileData = profile.json();
+  const settingsData = settings.json();
+  
+  return { userData, profileData, settingsData };
+}`,
+            5: `// ❌ BAD: エラーハンドリングなし + 直列処理
+async function anotherBadExample(ids) {
+  const results = [];
+  for (const id of ids) {
+    const data = await fetch(\`/api/data/\${id}\`);
+    const json = await data.json();
+    results.push(json);
+  }
+  return results;
+}`,
+            6: `// ✅ GOOD: 適切な並列処理とエラーハンドリング
+async function goodExample() {
+  try {
+    const [userRes, profileRes, settingsRes] = await Promise.all([
+      fetch('/api/user'),
+      fetch('/api/profile'),
+      fetch('/api/settings')
+    ]);
+    
+    const [userData, profileData, settingsData] = await Promise.all([
+      userRes.json(),
+      profileRes.json(),
+      settingsRes.json()
+    ]);
+    
+    return { userData, profileData, settingsData };
+  } catch (error) {
+    console.error('Failed to fetch data:', error);
+    throw new Error('Data fetch failed');
+  }
+}`,
+            7: `// ❌ BAD: Promise地獄
+function promiseHell() {
+  return fetch('/api/user')
+    .then(response => response.json())
+    .then(user => {
+      return fetch(\`/api/posts/\${user.id}\`)
+        .then(response => response.json())
+        .then(posts => {
+          return fetch(\`/api/comments/\${posts[0].id}\`)
+            .then(response => response.json())
+            .then(comments => {
+              return { user, posts, comments };
+            });
+        });
+    });
+}`,
+            8: `// ❌ BAD: 混在パターン (async/await + .then)
+async function mixedPattern() {
+  const user = await fetch('/api/user').then(r => r.json());
+  const posts = fetch('/api/posts').then(r => r.json());
+  const comments = await fetch('/api/comments').then(r => r.json());
+  
+  return { user, posts: await posts, comments };
+}`
+        };
+
+        function loadExample(num) {
+            document.getElementById('codeInput').value = examples[num];
+        }
+
+        function analyzeCode() {
+            const code = document.getElementById('codeInput').value;
+            const analysis = analyzePromiseFlow(code);
+            displayAnalysis(analysis);
+            generateFlowDiagram(analysis);
+        }
+
+        function analyzePromiseFlow(code) {
+            const issues = [];
+            const suggestions = [];
+            const flowSteps = [];
+
+            // 基本的な解析パターン
+            const awaitPattern = /await\s+([^;\n]+)/g;
+            const promiseAllPattern = /Promise\.all\s*\(\s*\[([^\]]+)\]\s*\)/g;
+            const tryPattern = /try\s*{[^}]*}/g;
+            const fetchPattern = /fetch\s*\([^)]+\)/g;
+            const thenPattern = /\.then\s*\(/g;
+
+            let match;
+            let stepCount = 0;
+
+            // await文の解析
+            while ((match = awaitPattern.exec(code)) !== null) {
+                stepCount++;
+                flowSteps.push({
+                    type: 'await',
+                    content: match[1].trim(),
+                    step: stepCount
+                });
+            }
+
+            // 並列処理の検出
+            const parallelCandidates = [];
+            const lines = code.split('\n');
+            let consecutiveAwaits = [];
+
+            lines.forEach((line, index) => {
+                if (line.includes('await ') && !line.includes('Promise.all')) {
+                    consecutiveAwaits.push({ line: line.trim(), index });
+                } else if (consecutiveAwaits.length > 1) {
+                    parallelCandidates.push([...consecutiveAwaits]);
+                    consecutiveAwaits = [];
+                } else {
+                    consecutiveAwaits = [];
+                }
+            });
+
+            if (consecutiveAwaits.length > 1) {
+                parallelCandidates.push(consecutiveAwaits);
+            }
+
+            // 問題とリコメンデーションの生成
+            if (parallelCandidates.length > 0) {
+                parallelCandidates.forEach(group => {
+                    if (group.length >= 2) {
+                        issues.push(`Lines ${group[0].index + 1}-${group[group.length - 1].index + 1}: 連続するawait文が検出されました。並列実行を検討してください。`);
+                        suggestions.push(`Promise.all([${group.map(g => g.line.replace('await ', '').replace(/;$/, '')).join(', ')}])を使用することで並列実行が可能です。`);
+                    }
+                });
+            }
+
+            // エラーハンドリングチェック
+            const hasTryCatch = /try\s*{[\s\S]*catch/.test(code);
+            if (!hasTryCatch && /await/.test(code)) {
+                issues.push('エラーハンドリングが不足している可能性があります。');
+                suggestions.push('try-catch文を追加してエラーを適切に処理することを推奨します。');
+            }
+
+            // 型安全性の警告 - .json()のawait忘れ
+            const jsonWithoutAwait = [];
+            const jsonPattern = /(?<!await\s+[^;\n]*?)\.json\(\)/g;
+            while ((match = jsonPattern.exec(code)) !== null) {
+                jsonWithoutAwait.push(match.index);
+            }
+
+            if (jsonWithoutAwait.length > 0) {
+                issues.push('.json()の結果をawaitしていない箇所があります。');
+                suggestions.push('Response.json()はPromiseを返すため、awaitが必要です。');
+            }
+
+            // Promise地獄の検出
+            const thenCount = (code.match(thenPattern) || []).length;
+            if (thenCount > 2) {
+                issues.push('Promise chain (.then)が多用されています。');
+                suggestions.push('async/awaitを使用してコードの可読性を向上させることを推奨します。');
+            }
+
+            // 混在パターンの検出
+            const hasAsync = /async\s+function/.test(code) || /=\s*async\s*\(/.test(code);
+            const hasThen = thenCount > 0;
+            if (hasAsync && hasThen) {
+                issues.push('async/awaitと.thenが混在しています。');
+                suggestions.push('一貫してasync/awaitを使用することを推奨します。');
+            }
+
+            // for文での逐次実行検出
+            const sequentialLoop = /for\s*\([^)]*\)\s*{[^}]*await[^}]*}/g;
+            if (sequentialLoop.test(code)) {
+                issues.push('ループ内でのawaitが検出されました。並列処理を検討してください。');
+                suggestions.push('Promise.all(array.map(async item => ...))を使用して並列処理に変更することを推奨します。');
+            }
+
+            // 未処理のPromiseの検出（簡易版）
+            const unawaitedPromise = /(?<!await\s+)fetch\s*\([^)]+\)(?!\s*\.then)(?!\s*\.catch)/g;
+            if (unawaitedPromise.test(code)) {
+                issues.push('awaitされていないPromiseが検出されました。');
+                suggestions.push('Promiseの結果を使用する場合は、awaitまたは.thenを使用してください。');
+            }
+
+            return {
+                issues,
+                suggestions,
+                flowSteps,
+                parallelCandidates,
+                hasErrorHandling: hasTryCatch,
+                metrics: {
+                    awaitCount: stepCount,
+                    thenCount: thenCount,
+                    parallelOpportunities: parallelCandidates.length
+                }
+            };
+        }
+
+        function displayAnalysis(analysis) {
+            const issuesContent = document.getElementById('issuesContent');
+            const metricsContent = document.getElementById('metricsContent');
+
+            let issuesHtml = '';
+            let metricsHtml = '';
+
+            // Issues and suggestions
+            if (analysis.issues.length > 0) {
+                analysis.issues.forEach(issue => {
+                    issuesHtml += `<div class="warning">⚠️ ${issue}</div>`;
+                });
+            }
+
+            if (analysis.suggestions.length > 0) {
+                analysis.suggestions.forEach(suggestion => {
+                    issuesHtml += `<div class="suggestion">💡 ${suggestion}</div>`;
+                });
+            }
+
+            if (analysis.issues.length === 0 && analysis.suggestions.length === 0) {
+                issuesHtml = '<div class="suggestion">✅ コードに明らかな問題は検出されませんでした。</div>';
+            }
+
+            // Metrics
+            if (analysis.metrics) {
+                metricsHtml += `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div style="background: #1a1a1a; padding: 15px; border-radius: 4px; border: 1px solid #404040;">
+                            <div style="color: #4a9eff; font-size: 24px; font-weight: bold;">${analysis.metrics.awaitCount}</div>
+                            <div style="color: #ccc; font-size: 14px;">Await Statements</div>
+                        </div>
+                        <div style="background: #1a1a1a; padding: 15px; border-radius: 4px; border: 1px solid #404040;">
+                            <div style="color: ${analysis.metrics.thenCount > 2 ? '#ffa500' : '#4a9eff'}; font-size: 24px; font-weight: bold;">${analysis.metrics.thenCount}</div>
+                            <div style="color: #ccc; font-size: 14px;">.then() Chains</div>
+                        </div>
+                        <div style="background: #1a1a1a; padding: 15px; border-radius: 4px; border: 1px solid #404040;">
+                            <div style="color: ${analysis.metrics.parallelOpportunities > 0 ? '#ffa500' : '#4a9eff'}; font-size: 24px; font-weight: bold;">${analysis.metrics.parallelOpportunities}</div>
+                            <div style="color: #ccc; font-size: 14px;">Parallel Opportunities</div>
+                        </div>
+                        <div style="background: #1a1a1a; padding: 15px; border-radius: 4px; border: 1px solid #404040;">
+                            <div style="color: ${analysis.hasErrorHandling ? '#4caf50' : '#f44336'}; font-size: 24px; font-weight: bold;">${analysis.hasErrorHandling ? '✓' : '✗'}</div>
+                            <div style="color: #ccc; font-size: 14px;">Error Handling</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            issuesContent.innerHTML = issuesHtml;
+            metricsContent.innerHTML = metricsHtml;
+        }
+        // 特殊文字をエスケープしてMermaidラベルを生成
+        function escapeMermaidLabel(text) {
+            return text
+                .replace(/[`\[\]{}|"]/g, '') // 特殊文字を削除
+                .replace(/\$\{[^}]*\}/g, '${...}') // テンプレートリテラルを簡略化
+                .substring(0, 30); // 長さ制限
+        }
+        function generateFlowDiagram(analysis) {
+            let mermaidCode = 'graph TD\n';
+            mermaidCode += '    Start([Function Start])\n';
+
+            let currentNode = 'Start';
+            let nodeCount = 1;
+
+            // エラーハンドリングの表現
+            if (analysis.hasErrorHandling) {
+                mermaidCode += '    TryBlock{Try Block}\n';
+                mermaidCode += '    Start --> TryBlock\n';
+                currentNode = 'TryBlock';
+            }
+
+            // フローステップの生成
+            analysis.flowSteps.forEach((step, index) => {
+                const nodeName = `Step${nodeCount}`;
+                const stepLabel = escapeMermaidLabel(step.content);
+                const nodeLabel = stepLabel.length > 30 - 2 ?
+                    stepLabel.substring(0, 30 - 2) + '...' :
+                    stepLabel;
+
+                if (step.type === 'await') {
+                    mermaidCode += `    ${nodeName}["await ${nodeLabel}"]\n`;
+                }
+
+                mermaidCode += `    ${currentNode} --> ${nodeName}\n`;
+                currentNode = nodeName;
+                nodeCount++;
+            });
+
+            // 並列処理の提案
+            if (analysis.parallelCandidates.length > 0) {
+                analysis.parallelCandidates.forEach((group, groupIndex) => {
+                    if (group.length >= 2) {
+                        const parallelNode = `Parallel${groupIndex}`;
+                        mermaidCode += `    ${parallelNode}{可能な並列処理}\n`;
+                        mermaidCode += `    ${parallelNode} -.-> |提案| ${currentNode}\n`;
+                    }
+                });
+            }
+
+            // エラーハンドリング
+            if (analysis.hasErrorHandling) {
+                mermaidCode += '    ErrorNode[Error Handling]\n';
+                mermaidCode += '    TryBlock -.-> |catch| ErrorNode\n';
+            }
+
+            mermaidCode += `    ${currentNode} --> End([Function End])\n`;
+
+            // スタイリング
+            mermaidCode += `
+    classDef awaitNode fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef parallelNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px,stroke-dasharray: 5 5
+    classDef errorNode fill:#ffebee,stroke:#d32f2f,stroke-width:2px
+    `;
+
+            const diagramElement = document.getElementById('flowDiagram');
+            diagramElement.innerHTML = '';
+
+            mermaid.render('promiseFlowDiagram', mermaidCode).then(({ svg }) => {
+                diagramElement.innerHTML = svg;
+            }).catch(err => {
+                diagramElement.innerHTML = `<p>図の生成に失敗しました: ${err.message}</p><pre>${mermaidCode}</pre>`;
+            });
+        }
+
+        // 初期分析
+        window.onload = () => {
+            analyzeCode();
+        };
+    </script>
+</body>
+
+</html>
